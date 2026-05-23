@@ -346,6 +346,9 @@ with col_right:
 # ═══════════════════════════════════════════════════════════
 # 실행
 # ═══════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════
+# 실행부 코드 (이 부분을 아래 코드로 교체하세요)
+# ═══════════════════════════════════════════════════════════
 if run:
     if not api_key:
         st.error("Google AI API 키를 입력해주세요.")
@@ -357,13 +360,27 @@ if run:
         st.error("희망 전공을 입력해주세요.")
         st.stop()
 
+    # 대학별 가이드북 텍스트 추출
+    univ_guide_text = ""
+    if univ_uploaded is not None:
+        with st.spinner("대학별 면접 가이드북 분석 중..."):
+            univ_guide_text = extract_text_from_pdf(univ_uploaded)
+
+    # 프롬프트 구성 (extra 제거 완료)
     user_input = (
         f"희망 전공: {major}\n"
-        f"추가 강조 포인트: {extra or '(없음)'}\n"
         f"메인 질문 수: {n_main}\n"
         f"꼬리질문 수: {n_tail}\n\n"
-        f"[학생부]\n{record_text}"
     )
+
+    if univ_guide_text.strip():
+        user_input += (
+            f"[목표 대학 특화 면접 가이드]\n"
+            f"제공된 대학 가이드북의 평가 기준과 스타일을 최우선으로 반영하여 질문을 생성할 것.\n"
+            f"{univ_guide_text}\n\n"
+        )
+
+    user_input += f"[학생부]\n{record_text}"
 
     with st.spinner(f"{model_name} 모델이 면접 질문지를 생성 중입니다..."):
         try:
