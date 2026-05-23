@@ -52,8 +52,8 @@ else:
 # ═══════════════════════════════════════════════════════════
 # 한글 폰트 등록 (PDF용)
 # ═══════════════════════════════════════════════════════════
-FONT_PATH = Path("fonts/NanumGothic.ttf")
-FONT_NAME = "NanumGothic"
+FONT_PATH = Path("C:/Windows/Fonts/malgun.ttf") 
+FONT_NAME = "MalgunGothic" # 폰트 이름도 변경
 FONT_LOADED = False
 if FONT_PATH.exists():
     try:
