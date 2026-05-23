@@ -153,7 +153,7 @@ def build_docx(sheet: dict, meta: dict) -> bytes:
             ev_run = ev_p.add_run(f"   📎 학생부 근거: {q['evidence']}")
             ev_run.italic = True
             ev_run.font.size = Pt(9)
-            ev_run.font.color.rgb = RGBColor(0x2563, 0xEB & 0xFF, 0xEB & 0xFF)
+            ev_run.font.color.rgb = RGBColor(0x25, 0x63, 0xEB)
 
         doc.add_paragraph()  # 간격
 
