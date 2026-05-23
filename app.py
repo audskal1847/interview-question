@@ -1,6 +1,6 @@
 """
 학생부 기반 모의 면접 질문지 생성기
-- WHAT-WHY-HOW-SO WHAT 원리 반영
+-  동국대 학생부위주전형 가이드북 출제원리(WHAT-WHY-HOW-SO WHAT) 반영
 - 영역 연계형 심화 질문 + 꼬리질문 2단계 구조
 - 화면 표시 / PDF / DOCX 동시 다운로드
 """
@@ -261,7 +261,7 @@ with st.sidebar:
 # 메인 영역
 # ═══════════════════════════════════════════════════════════
 st.title("🎤 학생부 기반 모의 면접 질문지 생성기")
-st.caption("동국대 학생부위주전형 가이드북 출제원리(WHAT-WHY-HOW-SO WHAT, 영역 연계, 활동 내부 심화)를 반영합니다.")
+st.caption("WHAT-WHY-HOW-SO WHAT 원리를 반영합니다.")
 
 col_left, col_right = st.columns([1.2, 1])
 
