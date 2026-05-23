@@ -320,19 +320,20 @@ with col_left:
     )
 
 # ─── 우측: 강조 포인트
+# ─── 우측: 분석 옵션
 with col_right:
     st.subheader("2. 분석 옵션")
     major = st.text_input(
         "🎓 희망 전공 / 학과",
         placeholder="예: 전자공학과",
     )
-    extra = st.text_area(
-        "🔍 추가 강조 포인트 (선택)",
-        height=160,
-        placeholder=(
-            "예) 자기주도적 문제해결 경험과 전공 적합성을 강조해줘.\n"
-            "예) 협업 과정에서 발생한 갈등 해결 경험을 깊이 다뤄줘."
-        ),
+    
+    st.markdown("---")
+    st.markdown("**🏫 목표 대학 면접 스타일 반영 (선택)**")
+    univ_uploaded = st.file_uploader(
+        "대학별 면접 가이드북/기출문제 업로드",
+        type=["pdf"],
+        help="지원 대학의 가이드북을 업로드하면 해당 대학의 출제 경향과 평가 요소를 반영합니다.",
     )
 
     st.divider()
@@ -341,7 +342,7 @@ with col_right:
         type="primary",
         use_container_width=True,
     )
-
+  
 # ═══════════════════════════════════════════════════════════
 # 실행
 # ═══════════════════════════════════════════════════════════
