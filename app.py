@@ -349,6 +349,9 @@ with col_right:
 # ═══════════════════════════════════════════════════════════
 # 실행부 코드 (이 부분을 아래 코드로 교체하세요)
 # ═══════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════
+# 실행부 (하나로 통합)
+# ═══════════════════════════════════════════════════════════
 if run:
     if not api_key:
         st.error("Google AI API 키를 입력해주세요.")
@@ -360,13 +363,13 @@ if run:
         st.error("희망 전공을 입력해주세요.")
         st.stop()
 
-    # 대학별 가이드북 텍스트 추출
+    # 1. 대학별 가이드북 텍스트 추출
     univ_guide_text = ""
     if univ_uploaded is not None:
         with st.spinner("대학별 면접 가이드북 분석 중..."):
             univ_guide_text = extract_text_from_pdf(univ_uploaded)
 
-    # 프롬프트 구성 (extra 제거 완료)
+    # 2. 프롬프트 구성
     user_input = (
         f"희망 전공: {major}\n"
         f"메인 질문 수: {n_main}\n"
@@ -382,19 +385,23 @@ if run:
 
     user_input += f"[학생부]\n{record_text}"
 
+    # 3. Gemini 호출
     with st.spinner(f"{model_name} 모델이 면접 질문지를 생성 중입니다..."):
         try:
             sheet = call_gemini(api_key, model_name, user_input)
-        except json.JSONDecodeError:
-            st.error("모델이 JSON 형식으로 응답하지 않았습니다. 다시 시도해 주세요.")
-            st.stop()
         except Exception as e:
             st.error(f"생성 실패: {e}")
             st.stop()
 
     questions = sheet.get("questions", [])
     if not questions:
-        st.error("질문이 생성되지 않았습니다. 학생부 내용을 더 풍부하게 입력해 주세요.")
+        st.error("질문이 생성되지 않았습니다.")
+        st.stop()
+
+    st.success(f"✅ 메인 질문 {len(questions)}개를 생성했습니다.")
+
+    # 4. 화면 출력 및 다운로드 버튼 (이하 기존 코드 그대로 유지)
+    # ... (생성된 질문 출력 및 다운로드 버튼 로직)
         st.stop()
 
     st.success(f"✅ 메인 질문 {len(questions)}개를 생성했습니다.")
