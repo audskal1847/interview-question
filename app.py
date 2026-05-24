@@ -2,7 +2,7 @@
 학생부 기반 모의 면접 질문지 생성기
 - 동국대 학생부위주전형 가이드북 출제원리(WHAT-WHY-HOW-SO WHAT) 반영
 - 영역 연계형 심화 질문 + 꼬리질문 2단계 구조
-- 화면 표시 / DOCX / JSON 다운로드 지원 (PDF 제거 버전)
+- 화면 표시 / DOCX / (PDF 제거 버전)
 """
 
 import streamlit as st
