@@ -178,7 +178,7 @@ with st.sidebar:
 # 메인 레이아웃
 # ═══════════════════════════════════════════════════════════
 st.title("🎤 학생부 면접 질문 생성기 시스템 v3.0")
-st.caption("WHY-HOW-WHAT-LEARN 원리에 기반한 심층 질문 생성 시스템입니다.")
+st.caption("👉 WHY-HOW-WHAT-LEARN 원리에 기반한 심층 질문 생성 시스템입니다.")
 
 col_left, col_right = st.columns([1.2, 1])
 
