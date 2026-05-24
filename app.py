@@ -233,7 +233,7 @@ with col_right:
     
     st.markdown("---")
     st.markdown("**🏫 목표 대학 면접 스타일 (선택)**")
-    univ_uploaded = st.file_uploader("대학별 면접 가이드북 / 면접 기출문제 업로드", type=["pdf"])
+    univ_uploaded = st.file_uploader("대학별 면접 가이드북 / 대학별 면접 기출 문제 업로드", type=["pdf"])
     
     st.divider()
     run = st.button("🚀 심층 면접 질문지 생성", type="primary", use_container_width=True)
