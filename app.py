@@ -1,7 +1,7 @@
 """
 학생부 종합 면접 어시스트 v3.0
-- 동국대 학생부위주전형 가이드북 출제원리(WHAT-WHY-HOW-SO WHAT) 반영
-- 화면 표시 / DOCX 다운로드 지원 (JSON, PDF 제거 버전)
+- 학년/과목 간 관심사 확장을 추적하는 '연계질문' 특화 로직 반영
+- 화면 표시 / DOCX 다운로드 지원 (PDF, JSON 제거 버전)
 - 하단 고정 푸터(만든 이) 추가
 """
 
@@ -14,16 +14,16 @@ from pathlib import Path
 from google import genai
 from google.genai import types
 
-import pypdf
 from docx import Document
-from docx.shared import Pt, RGBColor, Cm
+from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+import pypdf
 
 # ═══════════════════════════════════════════════════════════
 # 페이지 설정
 # ═══════════════════════════════════════════════════════════
 st.set_page_config(
-    page_title="학생부 종합 면접 어시스트 v3.0",
+    page_title="학생부 면접 질문 생성기 시스템 v3.0",
     page_icon="🎤",
     layout="wide",
 )
@@ -53,7 +53,7 @@ footer_css = """
 }
 </style>
 <div class="footer">
-    <b>🏫 학생부 기반 면접 질문 생성기 시스템 v3.0</b><br>
+    <b>🏫 학생부 면접 질문 생성기 시스템 v3.0</b><br>
     만든 이: 신선여자고등학교 김명남<br>
     🗓️ 2026.05
 </div>
@@ -61,13 +61,43 @@ footer_css = """
 st.markdown(footer_css, unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════
-# 시스템 프롬프트 불러오기
+# 시스템 프롬프트 (연계질문 특화)
 # ═══════════════════════════════════════════════════════════
-PROMPT_FILE = Path("prompts/system_rules.md")
-if PROMPT_FILE.exists():
-    SYSTEM_PROMPT = PROMPT_FILE.read_text(encoding="utf-8")
-else:
-    SYSTEM_PROMPT = "당신은 면접 출제 전문가입니다. 학생부 내용을 바탕으로 동기-과정-결과-배우고느낀점(WHY-HOW-WHAT-LEARN)을 묻는 질문을 생성하세요."
+SYSTEM_PROMPT = """
+당신은 대학 입학사정관 및 면접 출제 전문가입니다. 제공된 학생부 내용을 꼼꼼히 분석하여, 학생의 특정 관심사나 역량이 서로 다른 학년이나 과목(영역)으로 이어지는 '연계 지점'을 찾아 면접 질문을 생성하세요.
+
+[출제 원칙]
+1. 메인 질문: 특정 학년/과목에서 시작된 핵심 관심사나 활동을 묻습니다.
+2. 연계 질문: 메인 질문의 주제가 다른 학년이나 다른 과목에서 어떻게 확장, 심화, 또는 적용되었는지 묻습니다.
+3. 질문 끝에는 반드시 기재된 출처(예: 1학년 통합사회, 2학년 생명과학 I)를 괄호로 명시해야 합니다.
+4. 각 질문에 대해 학생부에 기록된 사실을 바탕으로 '모범 답변(또는 활동 내용 요약)'을 함께 제시하세요.
+
+[필수 JSON 출력 형식]
+반드시 아래의 JSON 구조로만 출력하세요. 마크다운이나 다른 텍스트는 절대 포함하지 마세요.
+{
+  "questions": [
+    {
+      "no": 1,
+      "main_question": "유전공학에 대한 관심으로 유전자 조작 유기체 문제를 사회 문제로 선정하여 조사하고 발표함, 어떤 내용?",
+      "main_context": "(1학년 통합사회)",
+      "linked_questions": [
+        {
+          "sub_no": "1-1",
+          "question": "유전자 조작 기술에 대한 내용을 탐구하며 장기 이식용 유전자 조작 동물 생산이 장기 부족 문제 해결에 기여할 수 있다는 점에 대해 알게 됨, 어떤 내용?",
+          "context": "(2학년 생명과학 I)",
+          "expected_answer": "유전자 조작 돼지가 생산된 사례와 국외 대학 연구팀의 형질전환 돼지 심장 이식 수술 성공 사례를 통해 기술적 가능성과 의료적 가치 확인함."
+        },
+        {
+          "sub_no": "1-2",
+          "question": "유전자 변형 식품에 관한 찬반 토론에서 유전자 변형 식품의 다양한 장점을 근거로 제시함, 어떤 내용?",
+          "context": "(2학년 생명과학 I)",
+          "expected_answer": "식량 부족 문제에 도움, 농약 사용을 줄임으로써 환경 보호에 도움."
+        }
+      ]
+    }
+  ]
+}
+"""
 
 # ═══════════════════════════════════════════════════════════
 # 유틸리티 함수
@@ -89,55 +119,49 @@ def call_gemini(api_key: str, model: str, user_input: str) -> dict:
         contents=[{"role": "user", "parts": [{"text": user_input}]}],
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
-            temperature=0.4,
+            temperature=0.3, # 창의성보다 사실(학생부) 기반 추출을 위해 온도 낮춤
             response_mime_type="application/json",
         ),
     )
-    # 안전한 JSON 추출
     raw = response.text.strip()
     raw = raw.replace("```json", "").replace("```", "").strip()
     return json.loads(raw)
 
 def build_docx(sheet: dict, meta: dict) -> bytes:
-    """질문지를 DOCX 파일로 변환"""
+    """질문지를 DOCX 파일로 변환 (연계질문 포맷 적용)"""
     doc = Document()
     
-    # 기본 폰트 설정
     style = doc.styles["Normal"]
     style.font.name = "맑은 고딕"
     style.font.size = Pt(11)
 
-    # 제목
     title = doc.add_heading("모의 면접 질문지", level=0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    # 메타 정보
     p = doc.add_paragraph()
-    p.add_run(f"희망 전공: {meta['major']} | 생성일: {meta['date']} | 메인 질문 {len(sheet['questions'])}개").italic = True
+    p.add_run(f"희망 전공: {meta['major']} | 생성일: {meta['date']} | 메인 세트 {len(sheet['questions'])}개").italic = True
     doc.add_paragraph("─" * 50)
 
-    # 질문 내용 작성
     for q in sheet["questions"]:
-        h = doc.add_paragraph()
-        run = h.add_run(f"Q{q['no']}. {q['main']}")
-        run.bold, run.font.size = True, Pt(12)
+        # 메인 질문
+        mp = doc.add_paragraph()
+        run = mp.add_run(f"{q['no']}. {q.get('main_question', '')} {q.get('main_context', '')}")
+        run.font.size = Pt(12)
 
-        areas = " / ".join(q.get("areas", []))
-        intent = " · ".join(q.get("intent", []))
-        
-        meta_line = doc.add_paragraph()
-        meta_run = meta_line.add_run(f"   활동영역: {areas} | 학년: {q.get('grade','-')} | 의도: {intent}")
-        meta_run.font.size, meta_run.font.color.rgb = Pt(9), RGBColor(0x6B, 0x72, 0x80)
-
-        for i, fu in enumerate(q.get("followups", []), 1):
-            fu_p = doc.add_paragraph(f"   └ 꼬리질문 {i}. {fu}")
-            fu_p.paragraph_format.left_indent = Cm(0.5)
-
-        if q.get("evidence"):
-            ev_p = doc.add_paragraph()
-            ev_run = ev_p.add_run(f"   📎 학생부 근거: {q['evidence']}")
-            ev_run.italic, ev_run.font.size, ev_run.font.color.rgb = True, Pt(9), RGBColor(0x25, 0x63, 0xEB)
+        # 연계 질문
+        if q.get("linked_questions"):
+            doc.add_paragraph("[연계질문]").bold = True
             
+            for lq in q["linked_questions"]:
+                # 서브 질문
+                lp = doc.add_paragraph()
+                lp.add_run(f"{lq.get('sub_no', '')}. {lq.get('question', '')} {lq.get('context', '')}")
+                
+                # 기대 답변 (앞에 : 붙이고 들여쓰기)
+                ap = doc.add_paragraph()
+                ap.add_run(f": {lq.get('expected_answer', '')}")
+                # ap.paragraph_format.left_indent = Cm(0.5)
+                
         doc.add_paragraph() # 문항 간 간격
 
     buf = io.BytesIO()
@@ -149,75 +173,56 @@ def build_docx(sheet: dict, meta: dict) -> bytes:
 # ═══════════════════════════════════════════════════════════
 with st.sidebar:
     st.markdown("### 🔑 기본 설정")
-    api_key = st.text_input("Google AI API 키", type="password", help="https://aistudio.google.com/apikey 에서 무료 발급")
-    st.markdown("[👉 무료 API 키 발급받기](https://aistudio.google.com/apikey)")
-
+    api_key = st.text_input("Google AI API 키", type="password")
+    
     st.divider()
     st.markdown("### ⚙️ 모델 설정")
     model_name = st.selectbox(
         "Gemini 모델",
         ["gemini-2.5-flash", "gemini-2.5-pro"],
         index=0,
-        help="Pro가 품질은 더 좋지만 속도가 약간 느립니다.",
     )
 
     st.divider()
     st.markdown("### 📊 질문지 옵션")
-    n_main = st.slider("메인 질문 수", 6, 12, 8)
-    n_tail = st.slider("질문당 꼬리질문 수", 0, 3, 2)
-
-    st.divider()
-    with st.expander("💡 도움말"):
-        st.markdown("""
-        - **학생부 입력**: PDF 업로드 또는 직접 붙여넣기
-        - **NEIS 원본 PDF**는 보안 처리되어 읽히지 않을 수 있습니다. 그럴 땐 텍스트를 직접 복사해 붙여넣으세요.
-        - **개인정보는 반드시 마스킹** 후 입력하세요.
-        """)
+    n_main = st.slider("메인 질문 세트 수", 3, 10, 5)
 
 # ═══════════════════════════════════════════════════════════
 # 메인 레이아웃
 # ═══════════════════════════════════════════════════════════
 st.title("🎤 학생부 면접 질문 생성기 시스템 v3.0")
-st.caption("👉 WHY-HOW-WHAT-LEARN 원리에 기반한 심층 질문 생성 시스템입니다.")
+st.caption("학생부 내 학년/영역 간 관심사 확장을 추적하는 '융합형 연계질문' 생성 시스템")
 
 col_left, col_right = st.columns([1.2, 1])
 
-# ─── 좌측: 학생부 입력
 with col_left:
     st.subheader("1. 학생부 데이터 입력")
-    uploaded = st.file_uploader("📁 학생부 PDF 업로드 (선택)", type=["pdf"], help="NEIS 보안 PDF는 읽히지 않을 수 있습니다. 그럴 땐 아래에 직접 붙여넣으세요.")
+    uploaded = st.file_uploader("📁 학생부 PDF 업로드 (선택)", type=["pdf"])
     
     extracted = ""
     if uploaded is not None:
         with st.spinner("PDF에서 텍스트 추출 중..."):
             extracted = extract_text_from_pdf(uploaded)
         if extracted.strip():
-            st.success(f"PDF에서 {len(extracted):,}자를 추출했습니다.")
-        else:
-            st.warning("PDF에서 텍스트를 추출하지 못했습니다. 아래에 직접 붙여넣어 주세요.")
+            st.success(f"PDF 추출 완료!")
 
     record_text = st.text_area(
-        "📝 학생부 내용 (PDF가 안 읽히면 여기에 직접 붙여넣기)",
+        "📝 학생부 내용 (직접 붙여넣기 권장)",
         value=extracted, 
         height=400,
-        placeholder="[1학년]\n[자율활동] ...\n[동아리활동] ...\n\n[2학년] ...\n[3학년] ..."
+        placeholder="[1학년 통합사회] ...\n[2학년 생명과학I] ..."
     )
 
-# ─── 우측: 분석 옵션
 with col_right:
     st.subheader("2. 분석 옵션")
-    major = st.text_input("🎓 희망 전공 / 학과", placeholder="예: 전자공학과")
+    major = st.text_input("🎓 희망 전공 / 학과", placeholder="예: 생명공학과")
     
     st.markdown("---")
-    st.markdown("**🏫 목표 대학 면접 스타일 반영 (선택)**")
-    univ_uploaded = st.file_uploader(
-        "대학별 면접 가이드북/기출문제 업로드", 
-        type=["pdf"],
-        help="지원 대학의 가이드북을 업로드하면 해당 대학의 출제 경향과 평가 요소를 반영합니다."
-    )
+    st.markdown("**🏫 목표 대학 면접 스타일 (선택)**")
+    univ_uploaded = st.file_uploader("대학별 면접 가이드북 업로드", type=["pdf"])
     
     st.divider()
-    run = st.button("🚀 면접 질문지 생성 시작", type="primary", use_container_width=True)
+    run = st.button("🚀 연계형 면접 질문지 생성", type="primary", use_container_width=True)
 
 # ═══════════════════════════════════════════════════════════
 # 실행부
@@ -229,80 +234,62 @@ if run:
     if not record_text.strip():
         st.error("학생부 내용을 입력해주세요.")
         st.stop()
-    if not major.strip():
-        st.error("희망 전공을 입력해주세요.")
-        st.stop()
 
-    # 대학별 가이드북 텍스트 추출
+    # 프롬프트 세팅
+    user_input = f"희망 전공: {major}\n생성할 연계 질문 세트 수: {n_main}\n\n"
+    
     univ_guide_text = ""
     if univ_uploaded is not None:
-        with st.spinner("대학별 면접 가이드북 분석 중..."):
-            univ_guide_text = extract_text_from_pdf(univ_uploaded)
+        univ_guide_text = extract_text_from_pdf(univ_uploaded)
+        if univ_guide_text.strip():
+            user_input += f"[대학 가이드북 참고]\n{univ_guide_text}\n\n"
 
-    # 프롬프트 구성
-    user_input = f"희망 전공: {major}\n메인 질문 수: {n_main}\n꼬리질문 수: {n_tail}\n\n"
+    user_input += f"[학생부 원문]\n{record_text}"
 
-    if univ_guide_text.strip():
-        user_input += (
-            f"[목표 대학 특화 면접 가이드]\n"
-            f"제공된 대학 가이드북의 평가 기준과 스타일을 최우선으로 반영하여 질문을 생성할 것.\n"
-            f"{univ_guide_text}\n\n"
-        )
-
-    user_input += f"[학생부]\n{record_text}"
-
-    # AI 생성 호출
-    with st.spinner(f"{model_name} 모델이 면접 질문지를 생성 중입니다..."):
+    # AI 생성
+    with st.spinner("학생부 전반의 맥락을 분석하여 연계질문을 추출 중입니다..."):
         try:
             sheet = call_gemini(api_key, model_name, user_input)
-        except json.JSONDecodeError:
-            st.error("모델이 JSON 형식으로 응답하지 않았습니다. 다시 시도해 주세요.")
-            st.stop()
         except Exception as e:
             st.error(f"생성 실패: {e}")
             st.stop()
 
     questions = sheet.get("questions", [])
     if not questions:
-        st.error("질문이 생성되지 않았습니다. 학생부 내용을 더 풍부하게 입력해 주세요.")
+        st.error("질문이 생성되지 않았습니다.")
         st.stop()
 
-    st.success(f"✅ 메인 질문 {len(questions)}개를 생성했습니다.")
+    st.success(f"✅ 총 {len(questions)}개의 연계 질문 세트를 생성했습니다.")
 
     # ────────────────────────────────────────────────
-    # 화면 출력
+    # 화면 출력 (첨부 이미지 스타일로 구현)
     # ────────────────────────────────────────────────
     st.markdown("---")
-    st.markdown("## 📋 생성된 면접 질문지")
+    st.markdown("## 📋 생성된 연계 면접 질문지")
     
     for q in questions:
         with st.container(border=True):
-            areas = " / ".join(q.get("areas", []))
-            intent = " · ".join(q.get("intent", []))
-            grade = q.get("grade", "-")
-
-            st.markdown(f"### Q{q['no']}. {q['main']}")
-            st.caption(f"활동영역: **{areas}** | 학년: **{grade}** | 의도: **{intent}** | 연계질문: {'🔗 YES' if q.get('linked') else '–'}")
-
-            for i, fu in enumerate(q.get("followups", []), 1):
-                st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;**꼬리질문 {i}.** {fu}")
-
-            if q.get("evidence"):
-                with st.expander("📎 학생부 근거 보기"):
-                    st.info(q["evidence"])
+            # 메인 질문
+            st.markdown(f"#### {q.get('no', '')}. {q.get('main_question', '')} **{q.get('main_context', '')}**")
+            
+            # 연계 질문
+            if q.get("linked_questions"):
+                st.markdown("**[연계질문]**")
+                for lq in q["linked_questions"]:
+                    st.markdown(f"{lq.get('sub_no', '')}. {lq.get('question', '')} **{lq.get('context', '')}**")
+                    st.caption(f": {lq.get('expected_answer', '')}")
 
     # ────────────────────────────────────────────────
-    # 다운로드 버튼 (Word 1열 배치)
+    # 다운로드 버튼
     # ────────────────────────────────────────────────
     st.markdown("---")
     st.markdown("### 📥 다운로드")
 
     meta = {
         "major": major,
-        "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "date": datetime.now().strftime("%Y-%m-%d"),
     }
-    today = datetime.now().strftime("%Y%m%d_%H%M")
-    base_name = f"면접질문지_{major}_{today}"
+    base_name = f"연계면접질문지_{major}_{datetime.now().strftime('%H%M')}"
 
     docx_bytes = build_docx(sheet, meta)
     st.download_button(
