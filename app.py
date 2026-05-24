@@ -1,14 +1,13 @@
 """
-학생부 기반 모의 면접 질문지 생성기
+학생부 종합 면접 어시스트 v3.0
 - 동국대 학생부위주전형 가이드북 출제원리(WHAT-WHY-HOW-SO WHAT) 반영
-- 영역 연계형 심화 질문 + 꼬리질문 2단계 구조
-- 화면 표시 / DOCX / (PDF 제거 버전)
+- 화면 표시 / DOCX 다운로드 지원 (JSON, PDF 제거 버전)
+- 하단 고정 푸터(만든 이) 추가
 """
 
 import streamlit as st
 import json
 import io
-import re
 from datetime import datetime
 from pathlib import Path
 
@@ -24,10 +23,42 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 # 페이지 설정
 # ═══════════════════════════════════════════════════════════
 st.set_page_config(
-    page_title="학생부 기반 모의 면접 질문지 생성기",
+    page_title="학생부 종합 면접 어시스트 v3.0",
     page_icon="🎤",
     layout="wide",
 )
+
+# ═══════════════════════════════════════════════════════════
+# 하단 푸터 CSS (중앙 정렬 및 스타일링)
+# ═══════════════════════════════════════════════════════════
+footer_css = """
+<style>
+.footer {
+    position: fixed;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    background-color: white;
+    color: #555555;
+    text-align: center;
+    padding: 15px 0;
+    font-size: 14px;
+    border-top: 1px solid #e5e7eb;
+    z-index: 1000;
+    line-height: 1.6;
+}
+/* 푸터에 가리지 않도록 메인 컨테이너 하단 여백 추가 */
+.main .block-container {
+    padding-bottom: 100px; 
+}
+</style>
+<div class="footer">
+    <b>🏫 학생부 면접 질문 생성기 시스템 v3.0</b><br>
+    만든 이: 신선여자고등학교 김명남<br>
+    🗓️ 2026.05
+</div>
+"""
+st.markdown(footer_css, unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════
 # 시스템 프롬프트 불러오기
@@ -36,13 +67,13 @@ PROMPT_FILE = Path("prompts/system_rules.md")
 if PROMPT_FILE.exists():
     SYSTEM_PROMPT = PROMPT_FILE.read_text(encoding="utf-8")
 else:
-    SYSTEM_PROMPT = "당신은 면접 출제 전문가입니다. 학생부 내용을 바탕으로 질문을 생성하세요."
+    SYSTEM_PROMPT = "당신은 면접 출제 전문가입니다. 학생부 내용을 바탕으로 동기-과정-결과-배우고느낀점(WHY-HOW-WHAT-LEARN)을 묻는 질문을 생성하세요."
 
 # ═══════════════════════════════════════════════════════════
-# 유틸: PDF에서 텍스트 추출
+# 유틸리티 함수
 # ═══════════════════════════════════════════════════════════
 def extract_text_from_pdf(file) -> str:
-    """업로드된 PDF에서 텍스트 추출"""
+    """PDF 텍스트 추출"""
     try:
         reader = pypdf.PdfReader(file)
         return "\n".join(page.extract_text() or "" for page in reader.pages)
@@ -50,68 +81,53 @@ def extract_text_from_pdf(file) -> str:
         st.error(f"PDF 읽기 실패: {e}")
         return ""
 
-# ═══════════════════════════════════════════════════════════
-# 유틸: Gemini 호출
-# ═══════════════════════════════════════════════════════════
 def call_gemini(api_key: str, model: str, user_input: str) -> dict:
-    """Gemini API를 호출해 JSON 결과를 반환"""
+    """Gemini API 호출 및 JSON 파싱"""
     client = genai.Client(api_key=api_key)
-
     response = client.models.generate_content(
         model=model,
-        contents=[
-            {"role": "user", "parts": [{"text": user_input}]},
-        ],
+        contents=[{"role": "user", "parts": [{"text": user_input}]}],
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
             temperature=0.4,
             response_mime_type="application/json",
         ),
     )
-
+    # 안전한 JSON 추출
     raw = response.text.strip()
-    raw = raw.replace("```json", "")
-    raw = raw.replace("```", "")
-    raw = raw.strip()
-    
+    raw = raw.replace("```json", "").replace("```", "").strip()
     return json.loads(raw)
 
-# ═══════════════════════════════════════════════════════════
-# 유틸: DOCX 생성
-# ═══════════════════════════════════════════════════════════
 def build_docx(sheet: dict, meta: dict) -> bytes:
-    """질문지를 DOCX 파일 바이트로 반환"""
+    """질문지를 DOCX 파일로 변환"""
     doc = Document()
-
+    
+    # 기본 폰트 설정
     style = doc.styles["Normal"]
     style.font.name = "맑은 고딕"
     style.font.size = Pt(11)
 
+    # 제목
     title = doc.add_heading("모의 면접 질문지", level=0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
+    # 메타 정보
     p = doc.add_paragraph()
-    p.add_run(
-        f"희망 전공: {meta['major']}    |    "
-        f"생성일: {meta['date']}    |    "
-        f"메인 질문 {len(sheet['questions'])}개"
-    ).italic = True
+    p.add_run(f"희망 전공: {meta['major']} | 생성일: {meta['date']} | 메인 질문 {len(sheet['questions'])}개").italic = True
     doc.add_paragraph("─" * 50)
 
+    # 질문 내용 작성
     for q in sheet["questions"]:
         h = doc.add_paragraph()
         run = h.add_run(f"Q{q['no']}. {q['main']}")
-        run.bold = True
-        run.font.size = Pt(12)
+        run.bold, run.font.size = True, Pt(12)
 
         areas = " / ".join(q.get("areas", []))
         intent = " · ".join(q.get("intent", []))
+        
         meta_line = doc.add_paragraph()
-        meta_run = meta_line.add_run(
-            f"   활동영역: {areas}  |  학년: {q.get('grade','-')}  |  의도: {intent}"
-        )
-        meta_run.font.size = Pt(9)
-        meta_run.font.color.rgb = RGBColor(0x6B, 0x72, 0x80)
+        meta_run = meta_line.add_run(f"   활동영역: {areas} | 학년: {q.get('grade','-')} | 의도: {intent}")
+        meta_run.font.size, meta_run.font.color.rgb = Pt(9), RGBColor(0x6B, 0x72, 0x80)
 
         for i, fu in enumerate(q.get("followups", []), 1):
             fu_p = doc.add_paragraph(f"   └ 꼬리질문 {i}. {fu}")
@@ -120,15 +136,12 @@ def build_docx(sheet: dict, meta: dict) -> bytes:
         if q.get("evidence"):
             ev_p = doc.add_paragraph()
             ev_run = ev_p.add_run(f"   📎 학생부 근거: {q['evidence']}")
-            ev_run.italic = True
-            ev_run.font.size = Pt(9)
-            ev_run.font.color.rgb = RGBColor(0x25, 0x63, 0xEB)
-
-        doc.add_paragraph()
+            ev_run.italic, ev_run.font.size, ev_run.font.color.rgb = True, Pt(9), RGBColor(0x25, 0x63, 0xEB)
+            
+        doc.add_paragraph() # 문항 간 간격
 
     buf = io.BytesIO()
     doc.save(buf)
-    buf.seek(0)
     return buf.getvalue()
 
 # ═══════════════════════════════════════════════════════════
@@ -136,8 +149,7 @@ def build_docx(sheet: dict, meta: dict) -> bytes:
 # ═══════════════════════════════════════════════════════════
 with st.sidebar:
     st.markdown("### 🔑 기본 설정")
-    api_key = st.text_input("Google AI API 키", type="password",
-                            help="https://aistudio.google.com/apikey 에서 무료 발급")
+    api_key = st.text_input("Google AI API 키", type="password", help="https://aistudio.google.com/apikey 에서 무료 발급")
     st.markdown("[👉 무료 API 키 발급받기](https://aistudio.google.com/apikey)")
 
     st.divider()
@@ -163,23 +175,18 @@ with st.sidebar:
         """)
 
 # ═══════════════════════════════════════════════════════════
-# 메인 영역
+# 메인 레이아웃
 # ═══════════════════════════════════════════════════════════
-st.title("🎤 학생부 기반 모의 면접 질문지 생성기")
-st.caption("문항 추출은 WHAT-WHY-HOW-SO WHAT 원리를 반영합니다.")
+st.title("🎤 학생부 면접 질문 생성기 시스템 v3.0")
+st.caption("동국대 가이드북 기반 WHY-HOW-WHAT-LEARN 심층 질문 생성 시스템")
 
 col_left, col_right = st.columns([1.2, 1])
 
 # ─── 좌측: 학생부 입력
 with col_left:
     st.subheader("1. 학생부 데이터 입력")
-
-    uploaded = st.file_uploader(
-        "📁 학생부 PDF 업로드 (선택)",
-        type=["pdf"],
-        help="NEIS 보안 PDF는 읽히지 않을 수 있습니다. 그럴 땐 아래에 직접 붙여넣으세요.",
-    )
-
+    uploaded = st.file_uploader("📁 학생부 PDF 업로드 (선택)", type=["pdf"], help="NEIS 보안 PDF는 읽히지 않을 수 있습니다. 그럴 땐 아래에 직접 붙여넣으세요.")
+    
     extracted = ""
     if uploaded is not None:
         with st.spinner("PDF에서 텍스트 추출 중..."):
@@ -191,9 +198,9 @@ with col_left:
 
     record_text = st.text_area(
         "📝 학생부 내용 (PDF가 안 읽히면 여기에 직접 붙여넣기)",
-        value=extracted,
+        value=extracted, 
         height=400,
-        placeholder="[1학년]\n[자율활동] ...\n[동아리활동] ...\n\n[2학년] ...\n[3학년] ...",
+        placeholder="[1학년]\n[자율활동] ...\n[동아리활동] ...\n\n[2학년] ...\n[3학년] ..."
     )
 
 # ─── 우측: 분석 옵션
@@ -204,14 +211,14 @@ with col_right:
     st.markdown("---")
     st.markdown("**🏫 목표 대학 면접 스타일 반영 (선택)**")
     univ_uploaded = st.file_uploader(
-        "대학별 면접 가이드북/기출문제 업로드",
+        "대학별 면접 가이드북/기출문제 업로드", 
         type=["pdf"],
-        help="지원 대학의 가이드북을 업로드하면 해당 대학의 출제 경향과 평가 요소를 반영합니다.",
+        help="지원 대학의 가이드북을 업로드하면 해당 대학의 출제 경향과 평가 요소를 반영합니다."
     )
-
+    
     st.divider()
     run = st.button("🚀 면접 질문지 생성 시작", type="primary", use_container_width=True)
-  
+
 # ═══════════════════════════════════════════════════════════
 # 실행부
 # ═══════════════════════════════════════════════════════════
@@ -226,11 +233,13 @@ if run:
         st.error("희망 전공을 입력해주세요.")
         st.stop()
 
+    # 대학별 가이드북 텍스트 추출
     univ_guide_text = ""
     if univ_uploaded is not None:
         with st.spinner("대학별 면접 가이드북 분석 중..."):
             univ_guide_text = extract_text_from_pdf(univ_uploaded)
 
+    # 프롬프트 구성
     user_input = f"희망 전공: {major}\n메인 질문 수: {n_main}\n꼬리질문 수: {n_tail}\n\n"
 
     if univ_guide_text.strip():
@@ -242,6 +251,7 @@ if run:
 
     user_input += f"[학생부]\n{record_text}"
 
+    # AI 생성 호출
     with st.spinner(f"{model_name} 모델이 면접 질문지를 생성 중입니다..."):
         try:
             sheet = call_gemini(api_key, model_name, user_input)
@@ -264,7 +274,7 @@ if run:
     # ────────────────────────────────────────────────
     st.markdown("---")
     st.markdown("## 📋 생성된 면접 질문지")
-
+    
     for q in questions:
         with st.container(border=True):
             areas = " / ".join(q.get("areas", []))
@@ -282,7 +292,7 @@ if run:
                     st.info(q["evidence"])
 
     # ────────────────────────────────────────────────
-    # 다운로드 버튼 (PDF 완전 제거, 2열 배치)
+    # 다운로드 버튼 (Word 1열 배치)
     # ────────────────────────────────────────────────
     st.markdown("---")
     st.markdown("### 📥 다운로드")
@@ -294,10 +304,11 @@ if run:
     today = datetime.now().strftime("%Y%m%d_%H%M")
     base_name = f"면접질문지_{major}_{today}"
 
-    d1, d2 = st.columns(2)
-    with d1:
-        docx_bytes = build_docx(sheet, meta)
-        st.download_button("📝 Word(docx) 다운로드", data=docx_bytes, file_name=f"{base_name}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
-    with d2:
-        json_bytes = json.dumps(sheet, ensure_ascii=False, indent=2).encode("utf-8")
-        st.download_button("🗂️ 원본 JSON 다운로드", data=json_bytes, file_name=f"{base_name}.json", mime="application/json", use_container_width=True)
+    docx_bytes = build_docx(sheet, meta)
+    st.download_button(
+        "📝 Word(docx) 다운로드", 
+        data=docx_bytes, 
+        file_name=f"{base_name}.docx", 
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", 
+        use_container_width=True
+    )
