@@ -235,7 +235,7 @@ with col_right:
     univ_uploaded = st.file_uploader("대학별 면접 가이드북 업로드", type=["pdf"])
     
     st.divider()
-    run = st.button("🚀 균형 잡힌 면접 질문지 생성", type="primary", use_container_width=True)
+    run = st.button("🚀 학생부의 내용과 맥락을 반영한 면접 질문지 생성", type="primary", use_container_width=True)
 
 # ═══════════════════════════════════════════════════════════
 # 실행부
