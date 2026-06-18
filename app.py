@@ -189,14 +189,6 @@ with st.sidebar:
     api_key = st.text_input("Google AI API 키", type="password")
     
     st.divider()
-    st.markdown("### ⚙️ 모델 설정")
-    model_name = st.selectbox(
-        "Gemini 모델",
-        ["gemini-2.5-flash", "gemini-2.5-pro"],
-        index=0,
-    )
-
-    st.divider()
     st.markdown("### 📊 질문지 옵션")
     n_main = st.slider("메인 질문 세트 수", 3, 12, 6)
     n_tail = st.slider("세트당 연계/꼬리질문 수", 2, 4, 2, help="하나의 메인 질문에 달리는 추가 심화 질문의 개수입니다.")
