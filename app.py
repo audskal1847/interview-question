@@ -1,7 +1,8 @@
 """
-학생부 종합 면접 어시스트 v3.0
+학생부 종합 면접 어시스트 v4.0
 - 학년/영역 연계형 질문과 단일 활동 심화형(꼬리질문) 균형 생성 로직 반영
-- 세트당 다수의 꼬리/연계질문(2~4개) 강제 할당 로직 추가 (심층면접 강화)
+- 세트당 다수의 꼬리/연계질문(2~4개) 강제 할당 로직
+- Google AI Studio 및 OpenRouter 다중 API 연동 (다양한 무료/유료 모델 지원)
 - 화면 표시 / DOCX 다운로드 지원 
 - 하단 고정 푸터(만든 이) 유지
 """
@@ -12,8 +13,10 @@ import io
 from datetime import datetime
 from pathlib import Path
 
+# API 연동을 위한 라이브러리
 from google import genai
 from google.genai import types
+from openai import OpenAI  # OpenRouter 연동을 위해 사용
 
 from docx import Document
 from docx.shared import Pt, Cm
@@ -24,7 +27,7 @@ import pypdf
 # 페이지 설정
 # ═══════════════════════════════════════════════════════════
 st.set_page_config(
-    page_title="학생부 면접 질문 생성기 시스템 v3.0",
+    page_title="학생부 면접 질문 생성기 시스템 v4.0",
     page_icon="🎤",
     layout="wide",
 )
@@ -54,7 +57,7 @@ footer_css = """
 }
 </style>
 <div class="footer">
-    <b>🏫 학생부 면접 질문 생성기 시스템 v3.2</b><br>
+    <b>🏫 학생부 면접 질문 생성기 시스템 v4.0</b><br>
     만든 이: 신선여자고등학교 김명남<br>
     🗓️ 2026.05
 </div>
@@ -78,7 +81,7 @@ SYSTEM_PROMPT = """
 4. 각 서브 질문에 대해 학생부에 기록된 사실을 바탕으로 '모범 답변(또는 활동 내용 요약)'을 제시하세요.
 
 [필수 JSON 출력 형식]
-반드시 아래의 JSON 구조로만 출력하세요.
+반드시 아래의 JSON 구조로만 출력하세요. 다른 텍스트는 일절 출력하지 마세요.
 {
   "questions": [
     {
@@ -98,12 +101,6 @@ SYSTEM_PROMPT = """
           "question": "두 번째 연계/꼬리질문 내용",
           "context": "(2학년 생명과학 I)",
           "expected_answer": "기대 답변 2"
-        },
-        {
-          "sub_no": "1-3",
-          "question": "세 번째 연계/꼬리질문 내용 (사용자가 3개를 요청했을 경우)",
-          "context": "(3학년 진로활동)",
-          "expected_answer": "기대 답변 3"
         }
       ]
     }
@@ -123,19 +120,37 @@ def extract_text_from_pdf(file) -> str:
         st.error(f"PDF 읽기 실패: {e}")
         return ""
 
-def call_gemini(api_key: str, model: str, user_input: str) -> dict:
-    """Gemini API 호출 및 JSON 파싱"""
-    client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model=model,
-        contents=[{"role": "user", "parts": [{"text": user_input}]}],
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
+def call_ai_api(provider: str, api_key: str, model: str, user_input: str) -> dict:
+    """선택된 API 제공자에 따라 모델을 호출하고 JSON 반환"""
+    
+    if provider == "Google AI Studio (공식)":
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model=model,
+            contents=[{"role": "user", "parts": [{"text": user_input}]}],
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+                temperature=0.4,
+                response_mime_type="application/json",
+            ),
+        )
+        raw = response.text.strip()
+        
+    elif provider == "OpenRouter":
+        client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_input}
+            ],
             temperature=0.4,
-            response_mime_type="application/json",
-        ),
-    )
-    raw = response.text.strip()
+        )
+        raw = response.choices[0].message.content.strip()
+    else:
+        raise ValueError("알 수 없는 API 제공자입니다.")
+
+    # 마크다운 코드 블록 제거 및 JSON 파싱
     raw = raw.replace("```json", "").replace("```", "").strip()
     return json.loads(raw)
 
@@ -182,12 +197,41 @@ def build_docx(sheet: dict, meta: dict) -> bytes:
     return buf.getvalue()
 
 # ═══════════════════════════════════════════════════════════
-# 사이드바: 설정
+# 사이드바: API 및 설정
 # ═══════════════════════════════════════════════════════════
 with st.sidebar:
-    st.markdown("### 🔑 기본 설정")
-    api_key = st.text_input("Google AI API 키", type="password")
-    
+    st.markdown("### 🔑 API 설정")
+    api_provider = st.radio(
+        "사용할 API 제공자를 선택하세요",
+        ["Google AI Studio (공식)", "OpenRouter"]
+    )
+
+    st.divider()
+
+    if api_provider == "Google AI Studio (공식)":
+        api_key = st.text_input("Google AI API 키를 입력하세요", type="password")
+        st.markdown("[👉 Google AI 키 발급받기](https://aistudio.google.com/apikey)")
+        
+        # 모델명 고정
+        model_name = "gemini-3.5-flash"
+        st.text_input("Google 모델 선택", value=model_name, disabled=True, help="Google API 선택 시 이 모델로 고정됩니다.")
+        
+    elif api_provider == "OpenRouter":
+        api_key = st.text_input("OpenRouter API 키를 입력하세요", type="password")
+        st.markdown("[👉 OpenRouter 키 발급받기](https://openrouter.ai/keys)")
+        
+        openrouter_models = [
+            "openai/gpt-oss-120b:free",
+            "google/gemma-4-31b-it:free",
+            "anthropic/claude-sonnet-5",
+            "anthropic/claude-opus-4.8",
+            "google/gemini-3.5-flash",
+            "deepseek/deepseek-v4-pro",
+            "qwen/qwen3.7-plus",
+            "z-ai/glm-5.2"
+        ]
+        model_name = st.selectbox("OpenRouter 모델 선택", openrouter_models)
+
     st.divider()
     st.markdown("### 📊 질문지 옵션")
     n_main = st.slider("메인 질문 세트 수", 3, 12, 6)
@@ -196,7 +240,7 @@ with st.sidebar:
 # ═══════════════════════════════════════════════════════════
 # 메인 레이아웃
 # ═══════════════════════════════════════════════════════════
-st.title("🎤 학생부 면접 질문 생성기 시스템 v3.0")
+st.title("🎤 학생부 면접 질문 생성기 시스템 v4.0")
 st.caption("학생부의 맥락을 파악하여 '융합형 연계질문'과 '단일활동 심화 꼬리질문'을 심층적으로 생성합니다.")
 
 col_left, col_right = st.columns([1.2, 1])
@@ -225,7 +269,7 @@ with col_right:
     
     st.markdown("---")
     st.markdown("**🏫 목표 대학 면접 스타일 (선택)**")
-    univ_uploaded = st.file_uploader("대학별 면접 가이드북 / 대학별 면접 기출 문제 업로드", type=["pdf"])
+    univ_uploaded = st.file_uploader("대학별 면접 가이드북 업로드", type=["pdf"])
     
     st.divider()
     run = st.button("🚀 심층 면접 질문지 생성", type="primary", use_container_width=True)
@@ -235,7 +279,7 @@ with col_right:
 # ═══════════════════════════════════════════════════════════
 if run:
     if not api_key:
-        st.error("Google AI API 키를 입력해주세요.")
+        st.error(f"{api_provider} API 키를 입력해주세요.")
         st.stop()
     if not record_text.strip():
         st.error("학생부 내용을 입력해주세요.")
@@ -256,11 +300,11 @@ if run:
     user_input += f"[학생부 원문]\n{record_text}"
 
     # AI 생성
-    with st.spinner(f"학생부 맥락을 분석하여 세트당 {n_tail}개의 심층 질문을 추출 중입니다..."):
+    with st.spinner(f"{model_name} 모델을 사용하여 세트당 {n_tail}개의 심층 질문을 추출 중입니다..."):
         try:
-            sheet = call_gemini(api_key, model_name, user_input)
+            sheet = call_ai_api(api_provider, api_key, model_name, user_input)
         except Exception as e:
-            st.error(f"생성 실패: {e}")
+            st.error(f"생성 실패: {e}\n(JSON 형식 에러이거나 해당 모델의 서버 문제일 수 있습니다.)")
             st.stop()
 
     questions = sheet.get("questions", [])
